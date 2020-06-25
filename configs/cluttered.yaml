@@ -1,0 +1,53 @@
+DATA_DIR: '/home/kai/Thesis/mnist_cluttered.t7'
+NAME: 'cluttered'
+AMAX: True
+FORWARD: 5
+USE_TENSORBOARD: True
+CLASSIFY: True
+
+NOTE: 'Cluttered MNIST model'
+RESUME: False
+
+PRE_PROCESSING:
+    GRAY: True
+    RESIZE: 60
+
+BIAS: True
+
+TRAIN:
+    EPOCHS: 10000
+    BATCH_SIZE: 128
+    NUM_WORKERS: 4
+    INIT_LR: 2.e+0
+    LR_PATIENCE: 20
+    MOMENTUM: 0.90
+    TRAIN_PATIENCE: 150
+    OPTIM: 'sgd'
+    WEIGHT_DECAY: 2.e-5
+    IS_TRAIN: False
+    NUM: 10000
+    VAL_NUM: 5000
+    SCHEDULE: [1,2,3,5,7,10,15,25,35,50,75,100,125,150,175,200,225,250,275,300,325,350,400,450,500,550]
+    LOSS: 'bce'
+    KL_FACTOR: 0.01
+    CL_FACTOR: 0.005
+    FRAC_LABELS: 1.
+
+MODEL:
+    GLIMPSE:
+        LOC: 128
+        GLIMPSE: [128,128,128]
+        NUM: 3
+        SCALE: 2.
+        PATCH_SIZE: 12
+        SAMPLE: True
+    CORE:
+        NUM: 6
+        HIDDEN: 512
+    LATENT:
+        HIDDEN: 25
+    DECODER:
+        HIDDEN: [128,128,128]
+
+TEST:
+    NUM: 6
