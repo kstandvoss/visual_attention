@@ -2,17 +2,18 @@
 
 import torch
 
-from trainer import Trainer
-from data_loader import get_data_loader
+from src.trainer import Trainer
+from src.data_loader import get_data_loader
+from src.utils import *
+from src.config import cfg_from_file, cfg_from_list, cfg_set_log_file
 
-from config import cfg_from_file, cfg_from_list, cfg_set_log_file
 import argparse
 import pprint
 import numpy as np
 import logging
 import logging.config
 import sys
-from utils import *
+
 
 
 def parse_args():

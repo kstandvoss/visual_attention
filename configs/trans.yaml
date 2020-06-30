@@ -1,4 +1,4 @@
-DATA_DIR: '/home/kai/Thesis/mnist_trans.t7'
+DATA_DIR: './data/mnist_trans.t7'
 NAME: 'translate'
 AMAX: True
 FORWARD: 5

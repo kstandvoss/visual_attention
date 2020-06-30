@@ -234,7 +234,7 @@ class glimpse_network(nn.Module):
         l_out = F.leaky_relu(self.fc2(l_t_prev))
 
         what = self.fc3(phi)
-        where = self.fc4(phi)
+        where = self.fc3(phi)
 
         # feed to fc layer
         g_t = F.leaky_relu(what + where)

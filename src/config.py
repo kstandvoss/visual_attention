@@ -49,7 +49,7 @@ def cfg_from_file(filename, cfg=None):
         cfg = set_default()
 
     with open(filename, "r") as f:
-        yaml_cfg = edict(yaml.load(f))
+        yaml_cfg = edict(yaml.load(f, Loader=yaml.FullLoader))
 
     _merge_a_into_b(yaml_cfg, cfg)
 
@@ -86,7 +86,7 @@ def cfg_from_list(cfg_list, cfg=None):
 
 def cfg_to_str(cfg):
     """Generate string representation of config"""
-    return f"model_{cfg.MODEL.CORE.NUM}_{__C.MODEL.GLIMPSE.PATCH_SIZE}x{__C.MODEL.GLIMPSE.PATCH_SIZE}_{__C.MODEL.GLIMPSE.SCALE}"
+    return f"model_{cfg.MODEL.CORE.NUM}_{cfg.MODEL.GLIMPSE.PATCH_SIZE}x{cfg.MODEL.GLIMPSE.PATCH_SIZE}_{cfg.MODEL.GLIMPSE.SCALE}"
 
 
 def cfg_set_log_file(cfg):
@@ -227,6 +227,9 @@ def set_default():
     # Model options
     #
     __C.MODEL = edict()
+
+    # Whether to add previous location to latent code
+    __C.MODEL.ADD_LOC = False
 
     # Glimpse Network
     __C.MODEL.GLIMPSE = edict()

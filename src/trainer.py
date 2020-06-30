@@ -28,6 +28,10 @@ from matplotlib import pyplot as plt
 from matplotlib import rcParams
 rcParams["font.family"] = "serif"
 rcParams["font.sans-serif"] = ["Palatino"]
+rcParams["font.size"] = 20
+
+PLOT_COLOR = (0.04,.34,.57)
+import seaborn as sn
 from heatmappy import Heatmapper
 
 plt.switch_backend("agg")
@@ -90,9 +94,11 @@ class Trainer(object):
         if args.CLASSIFY:
             self.classify = True
             self.num_classes = 10 if args.TARGET < 0 else 1
+            self.target_class = args.TARGET
         else:
             self.classify = False
             self.num_classes = 0
+        self.num_digits = 10
 
         # training params
         self.epochs = args.TRAIN.EPOCHS
@@ -121,9 +127,11 @@ class Trainer(object):
         self.frac = args.TRAIN.FRAC_LABELS
         self.batch_size = None
 
-        self.plot_dir = Path("./plots/") / self.model_name
+        self.plot_dir = Path("./plots/") / self.name
+        self.file_dir = Path("./files/") / self.name
         if not self.plot_dir.exists():
             self.plot_dir.mkdir(parents=True)
+            self.file_dir.mkdir(parents=True)
 
         if not args.TRAIN.IS_TRAIN:
             self.num_glimpses = args.TEST.NUM
@@ -161,6 +169,7 @@ class Trainer(object):
             self.num_classes,
             args.BIAS,
             args.MODEL.GLIMPSE.SAMPLE,
+            args.MODEL.ADD_LOC,
         )
         self.logger.debug("Model created")
 
@@ -216,7 +225,7 @@ class Trainer(object):
         """
         h_t = torch.randn(self.batch_size, self.hidden_size, requires_grad=False)
         c_t = torch.randn(self.batch_size, self.hidden_size, requires_grad=False)
-        l_t = torch.Tensor(self.batch_size, 2).uniform_(-1, 1)
+        l_t = torch.zeros(self.batch_size, 2)
 
         if self.use_gpu:
             h_t, c_t = h_t.cuda(), c_t.cuda()
@@ -504,7 +513,7 @@ class Trainer(object):
 
             return np.mean(losses), np.mean(accuracies)
 
-    def test(self, add_path="", heatmap=True, confusion_matrix=True):
+    def test(self, heatmap=True):
         """
         Test the model on the held-out test data.
         """
@@ -517,8 +526,8 @@ class Trainer(object):
             accuracies = []
 
             confusion_matrix = torch.zeros(self.num_classes, self.num_classes)
-            heat_points = [[[] for i in range(self.num_glimpses)] for j in range(self.num_classes+1)]
-            heat_mean = torch.zeros(self.num_classes, *self.im_size)
+            heat_points = [[[] for i in range(self.num_glimpses)] for j in range(self.num_digits+1)]
+            heat_mean = torch.zeros(self.num_digits, *self.im_size)
 
             var_means = torch.zeros(self.num_glimpses,len(self.test_loader))
             loss_means = torch.zeros(self.num_glimpses,len(self.test_loader))
@@ -549,10 +558,9 @@ class Trainer(object):
                 locs = torch.zeros(self.batch_size, self.num_glimpses, 2)
                 acc_loss = 0
                 sub_dir = self.plot_dir / f"{i:06d}_dir"
-                if not sub_dir.exists():
-                    sub_dir.mkdir()
+                if not sub_dir.exists() and i < 10:
+                    sub_dir.mkdir(parents=True)
 
-                l_t = torch.zeros(self.batch_size, 2).type(l_t.type())
                 for t in range(self.num_glimpses):
                     # forward pass through model
                     locs[:, t] = l_t.clone().detach()
@@ -599,8 +607,8 @@ class Trainer(object):
                             count_hits[t,1] +=1
 
                     imgs = [targets[t], glimpses[t], means[t], vars[t]]
-                    filename = sub_dir / (add_path + f"{i:06d}_glimpse{t:01d}.png")
-                    if i == 1:
+                    filename = sub_dir / f"{i:06d}_glimpse{t:01d}.png"
+                    if i < 10:
                         torchvision.utils.save_image(
                             imgs,
                             filename,
@@ -612,10 +620,10 @@ class Trainer(object):
                         )
 
                     var = r_t.var(0).reshape(self.batch_size,-1)
-                    var_means[t,i] = var.sum(-1).mean(0)
-                    loss_means[t,i] = self.compute_recloss(r_t,x)
+                    var_means[t,i] = var.max(-1)[0].mean(0)
+                    loss_means[t,i] = temp_loss.mean()
 
-                    for j in range(self.num_classes):
+                    for j in range(self.num_digits):
                         heat_points[j][t].extend(
                             denormalize(x.size(-1), l_t[true == j]).tolist()
                         )
@@ -635,10 +643,12 @@ class Trainer(object):
                     else:
                         pred = out_t.detach().argmax(1)
                         target = true
+                        for p, tr in zip(pred.view(-1), target.view(-1)):
+                            confusion_matrix[tr.long(), p.long()] += 1
+
                     accuracies.append(torch.sum(pred == target).float().item() / len(y))
-                    for p, tr in zip(pred.view(-1), true.view(-1)):
-                        confusion_matrix[tr.long(), p.long()] += 1
-                for j in range(self.num_classes):
+
+                for j in range(self.num_digits):
                     if len(x[true == j]):
                         heat_mean[j] += x[true == j].mean(0).cpu()
 
@@ -648,8 +658,8 @@ class Trainer(object):
                 for im in imgs:
                     im = (im - im.min()) / (im.max()-im.min())
                 # store images + reconstructions of largest scale
-                filename = self.plot_dir / (add_path + f"{i:06d}.png")
-                if i == 1:
+                filename = self.plot_dir / f"{i:06d}.png"
+                if i < 10:
                     torchvision.utils.save_image(
                         torch.cat(imgs, 0),
                         filename,
@@ -661,46 +671,26 @@ class Trainer(object):
                     )
 
 
-            if self.classify:
-                sub_dir = Path('class')
-            else:
-                sub_dir = Path('no_class')
-            pkl.dump(dists,open(sub_dir/'dists.pkl','wb'))
-            pkl.dump(var_dist,open(sub_dir/'var_dist.pkl','wb'))
-            pkl.dump(err_dist,open(sub_dir/'err_dist.pkl','wb'))
-            pkl.dump(heat_points,open(sub_dir/'locs.pkl','wb'))
-            pkl.dump(labels,open(sub_dir/'labels.pkl','wb'))
-            pkl.dump(heat_mean,open(sub_dir/'mean.pkl','wb'))
+            pkl.dump(dists,open(self.file_dir/'dists.pkl','wb'))
+            pkl.dump(var_dist,open(self.file_dir/'var_dist.pkl','wb'))
+            pkl.dump(err_dist,open(self.file_dir/'err_dist.pkl','wb'))
+            pkl.dump(heat_points,open(self.file_dir/'locs.pkl','wb'))
+            pkl.dump(labels,open(self.file_dir/'labels.pkl','wb'))
+            pkl.dump(heat_mean,open(self.file_dir/'mean.pkl','wb'))
             print(count_hits[:,0]/count_hits.sum(1))
 
-            f = plt.figure()
-            plt.title('Uncertainty over saccades')
-            plt.errorbar(range(self.num_glimpses),var_means.mean(-1).cpu().numpy(), yerr=var_means.std(-1).cpu().numpy(),marker='o',c=(0.04,.34,.57))
-            plt.xlabel('Saccade number')
-            plt.ylabel('Summed model variance')
-            f.tight_layout()
-            f.savefig(self.plot_dir / f"uncertainty.pdf", bbox_inches="tight")
+            sn.set(font="serif",font_scale=2,context='paper', style='dark', rc={"lines.linewidth": 2.5})
 
-            f = plt.figure()
-            plt.title('Prediction error over saccades')
-            plt.errorbar(range(self.num_glimpses),loss_means.mean(-1).cpu().numpy(), yerr=loss_means.std(-1).cpu().numpy(),marker='o',c=(0.04,.34,.57))
-            plt.xlabel('Saccade number')
-            plt.ylabel('Binary Cross Entropy')
-            plt.ylim(0.,0.6)
-            f.tight_layout()
-            f.savefig(self.plot_dir / f"pred_error.pdf", bbox_inches="tight")
-
-            f, ax = plt.subplots(1,2, figsize=(8,3))
-            ax[0].errorbar(range(self.num_glimpses),loss_means.mean(-1).cpu().numpy(), yerr=loss_means.std(-1).cpu().numpy(),marker='o',c=(0.04,.34,.57))
-            ax[0].set_ylim(0.,0.6)
-            ax[0].set_ylabel('Binary Cross Entropy')
-            ax[0].set_xlabel('Saccade number')
-            ax[1].errorbar(range(self.num_glimpses),var_means.mean(-1).cpu().numpy(), yerr=var_means.std(-1).cpu().numpy(),marker='o',c=(0.04,.34,.57))
+            errs = err_dist.view(len(self.test_loader.dataset),self.num_glimpses,-1).cpu().numpy()
+            vars = var_dist.view(len(self.test_loader.dataset),self.num_glimpses,-1).cpu().numpy()
+            f, ax = plt.subplots(2,1, sharex=True, figsize=(9,12))
+            ax[0].plot(range(self.num_glimpses),errs.mean((0,-1)),marker='o',markersize=10,c=PLOT_COLOR)
+            ax[0].set_ylabel('Prediction Error')
+            ax[1].plot(range(self.num_glimpses),vars.max(-1).mean(0),marker='o',markersize=10,c=PLOT_COLOR)
             ax[1].set_xlabel('Saccade number')
-            ax[1].set_ylabel('Summed model variance')
-            ax[1].set_yticklabels(['  0','  1','  2','  3','  4','  5'])
+            ax[1].set_ylabel('Uncertainty')
             f.tight_layout()
-            f.savefig(self.plot_dir / f"comb_var_err.pdf", bbox_inches="tight")
+            f.savefig(self.plot_dir / f"comb_var_err.pdf", bbox_inches = 'tight', pad_inches = 0, dpi=600)
 
             print("#######################")
             if self.classify:
@@ -709,11 +699,11 @@ class Trainer(object):
                 plot_confusion_matrix(
                     confusion_matrix, self.plot_dir / f"confusion_matrix.png"
                 )
-                pkl.dump(confusion_matrix,open(sub_dir/'conf_matrix.pkl','wb'))
+                pkl.dump(confusion_matrix,open(self.file_dir/'conf_matrix.pkl','wb'))
 
             #create heatmaps
             flatten = lambda l,i: [item for sublist in l for item in sublist[i]]
-            for i in range(self.num_classes):
+            for i in range(self.num_digits):
                 img = array2img(heat_mean[i])
                 points = np.array(heat_points[i])
 
@@ -779,7 +769,7 @@ class Trainer(object):
         if best:
             filename = self.model_name + "_model_best.pth.tar"
         ckpt_path = self.ckpt_dir / filename
-        map_location = 'gpu' if self.use_gpu else 'cpu'
+        map_location = 'cuda' if self.use_gpu else 'cpu'
         ckpt = torch.load(ckpt_path, map_location=torch.device(map_location))
 
         # load variables from checkpoint

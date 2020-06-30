@@ -49,6 +49,7 @@ class VariationalPredictiveAttention(nn.Module):
         num_classes,
         bias=True,
         locator=False,
+        add_location=False,
     ):
         """
         Initialize the recurrent attention model and its
@@ -67,6 +68,7 @@ class VariationalPredictiveAttention(nn.Module):
         :param num_glimpses : (int) number of glimpses to take per image
         :param bias         : (bool) whether to use bias in convolutions
         :param locator      : (bool) whether to use locator network to determine next location
+        :param add_location : (bool) whether to add location to decoder and latent network
         """
         super(VariationalPredictiveAttention, self).__init__()
         self.logger = logging.getLogger(__name__)
@@ -74,6 +76,8 @@ class VariationalPredictiveAttention(nn.Module):
         self.locator = locator
         self.latent_size = latent_size
         self.num_classes = num_classes
+        add_latent = num_classes if num_classes > 1 else 0
+        self.add_loc = 2 if add_location else 0
         self.out_size = i[-1] ** 2
 
         self.sensor = glimpse_network(h_g, h_l, g, k, s, i[0], bias=bias)
@@ -83,9 +87,9 @@ class VariationalPredictiveAttention(nn.Module):
 
         self.decision = decision_network(hidden_size, latent_size, self.num_classes)
 
-        self.latent = latent_network(hidden_size + self.num_classes, latent_size)
+        self.latent = latent_network(hidden_size + add_latent + self.add_loc, latent_size)
         self.decoder = decoder_network(
-            latent_size + self.num_classes, dec_size, self.out_size, bias=bias
+            latent_size + self.num_classes + self.add_loc, dec_size, self.out_size, bias=bias
         )
 
     def forward(
@@ -131,14 +135,21 @@ class VariationalPredictiveAttention(nn.Module):
         out_t = torch.zeros(batch_size, self.num_classes).type(h_t.type())
 
         dist = None
-        if classify and last:
+        if classify:
             out_t = self.decision(h_t)
-            attach = out_t
+            if self.add_loc:
+                attach = torch.cat([out_t, l_t],1)
+            else:
+                attach = out_t
         else:
             attach = torch.Tensor([]).type(x.type())
 
         # Generate forward samples for uncertainty estimate
-        mu, logvar, z = self.latent(torch.cat([h_t, attach], 1))
+        if self.num_classes > 1:
+            mu, logvar, z = self.latent(torch.cat([h_t, attach], 1))
+        else:
+            mu, logvar, z = self.latent(h_t)
+
         for i in range(samples):
             r_t[i] = self.decoder(torch.cat([z, attach], 1))
             z = self.latent.reparametrize(mu,logvar)

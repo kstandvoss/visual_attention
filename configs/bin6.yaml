@@ -1,4 +1,4 @@
-DATA_DIR: '/home/kai/Thesis/mnist.t7'
+DATA_DIR: './data/mnist.t7'
 NAME: 'bin_six'
 AMAX: True
 FORWARD: 5
