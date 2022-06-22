@@ -2,7 +2,7 @@ torchfile==0.1.0
 matplotlib==2.2.3
 torch==1.1.0
 pandas==0.24.2
-numpy==1.16.3
+numpy==1.22.0
 scikit_image==0.15.0
 tqdm==4.26.0
 easydict==1.9
